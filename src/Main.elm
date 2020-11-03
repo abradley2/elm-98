@@ -11,9 +11,12 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as E
 import Json.Decode as D
+import Random
+import Process
 import Task
 import Theme
-
+import UUID
+import Dict exposing (Dict)
 
 type Effect
     = EffectNone
@@ -36,13 +39,47 @@ runEffect effect =
 
 
 type alias Flags =
-    {}
+    { decoded : Bool
+    , seeds : UUID.Seeds
+    }
+
+type DesktopElement
+    = File
+    | Folder
+
+fallbackFlags : Flags
+fallbackFlags =
+    { decoded = False
+    , seeds =
+        UUID.Seeds
+            (Random.initialSeed 0)
+            (Random.initialSeed 0)
+            (Random.initialSeed 0)
+            (Random.initialSeed 0)
+    }
 
 
 type alias Model =
     { viewport : Maybe Viewport
     , contextMenuPosition : Maybe ClickPosition
+    , flags : Flags
+    , elements : Dict String DesktopElement
     }
+
+
+getUUID : Model -> ( UUID.UUID, Model )
+getUUID model =
+    let
+        ( uuid, nextSeeds ) =
+            UUID.step model.flags.seeds
+
+        flags =
+            model.flags
+
+        nextFlags =
+            { flags | seeds = nextSeeds }
+    in
+    ( uuid, { model | flags = nextFlags } )
 
 
 type Msg
@@ -51,6 +88,8 @@ type Msg
     | RecievedViewport Viewport
     | DesktopClicked
     | ContextMenuClicked ClickPosition
+    | RequestCreateFile ClickPosition
+    | RequestCreateFolder ClickPosition
 
 
 type alias ClickPosition =
@@ -59,11 +98,28 @@ type alias ClickPosition =
     }
 
 
+decodeClickPosition : D.Decoder ClickPosition
 decodeClickPosition =
     D.map2
         ClickPosition
         (D.at [ "clientX" ] D.int)
         (D.at [ "clientY" ] D.int)
+
+
+flagsDecoder : D.Decoder Flags
+flagsDecoder =
+    D.map2 Flags
+        (D.succeed True)
+        (D.at [ "seeds" ] seedDecoder)
+
+
+seedDecoder : D.Decoder UUID.Seeds
+seedDecoder =
+    D.map4 UUID.Seeds
+        (D.at [ "seed1" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "seed2" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "seed3" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "seed4" ] D.int |> D.map Random.initialSeed)
 
 
 view : Model -> H.Html Msg
@@ -93,7 +149,7 @@ view model =
                         ]
                     , E.stopPropagationOn "click" (D.succeed ( NoOp, True ))
                     ]
-                    [ desktopContextMenuView model
+                    [ desktopContextMenuView model menuPosition
                     ]
 
             Nothing ->
@@ -118,23 +174,42 @@ bottomMenuBar model =
         []
 
 
-init_ : Flags -> ComponentResult ( Model, Effect ) Msg Never Never
-init_ flags =
+init_ : D.Value -> ComponentResult ( Model, Effect ) Msg Never Never
+init_ flagsJS =
     { viewport = Nothing
     , contextMenuPosition = Nothing
+    , elements = Dict.empty
+    , flags =
+        D.decodeValue flagsDecoder flagsJS
+            |> Result.withDefault fallbackFlags
     }
         |> withModel
         |> withEffect EffectNone
 
 
-init : Flags -> ( Model, Cmd Msg )
-init flags =
-    init_ flags |> resolveAll runEffect
+init : D.Value -> ( Model, Cmd Msg )
+init flagsJS =
+    init_ flagsJS |> resolveAll runEffect
 
 
 update_ : Msg -> Model -> ComponentResult ( Model, Effect ) Msg Never Never
 update_ msg model =
     case msg of
+        RequestCreateFile clickPosition ->
+            let
+                (uuid, nextModel) = getUUID model
+
+                nextElements = Dict.insert (UUID.toString uuid) Folder
+            in  
+            nextModel
+                |> withModel
+                |> withEffect EffectNone
+
+        RequestCreateFolder clickPosition ->
+            model
+                |> withModel
+                |> withEffect EffectNone
+
         NoOp ->
             model
                 |> withModel
@@ -171,7 +246,7 @@ subscriptions model =
     onResize OnResize
 
 
-main : Program Flags Model Msg
+main : Program D.Value Model Msg
 main =
     Browser.element
         { init = init
@@ -181,8 +256,8 @@ main =
         }
 
 
-desktopContextMenuView : Model -> H.Html Msg
-desktopContextMenuView model =
+desktopContextMenuView : Model -> ClickPosition -> H.Html Msg
+desktopContextMenuView model clickPosition =
     H.div
         [ A.css
             [ displayFlex
@@ -193,14 +268,14 @@ desktopContextMenuView model =
         ]
         (List.map
             desktopContextMenuItemView
-            [ "Create File"
-            , "Create Folder"
+            [ ( "Create File", RequestCreateFile clickPosition )
+            , ( "Create Folder", RequestCreateFolder clickPosition )
             ]
         )
 
 
-desktopContextMenuItemView : String -> H.Html Msg
-desktopContextMenuItemView itemName =
+desktopContextMenuItemView : ( String, Msg ) -> H.Html Msg
+desktopContextMenuItemView ( itemName, onClick ) =
     H.button
         [ A.css
             [ borderStyle none
@@ -210,10 +285,19 @@ desktopContextMenuItemView itemName =
             , minWidth (px 0)
             , padding2 (px 2) (px 4)
             , cursor pointer
-            , hover 
+            , Css.pseudoClass "not(:disabled):active"
+                [ border (px 0)
+                , padding2 (px 2) (px 4)
+                ]
+            , active
+                [ border (px 0)
+                , padding2 (px 2) (px 4)
+                ]
+            , hover
                 [ backgroundColor Theme.darkSilver
                 ]
             ]
+        , E.onClick onClick
         ]
         [ H.text itemName
         ]
