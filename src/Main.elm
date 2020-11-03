@@ -6,17 +6,18 @@ import Browser.Events exposing (onResize)
 import ComponentResult exposing (ComponentResult, resolve, withCmd, withExternalMsg, withModel)
 import ComponentResult.Effect exposing (resolveAll, resolveEffects, withEffect)
 import Css exposing (..)
+import Dict exposing (Dict)
 import Html
 import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as E
 import Json.Decode as D
-import Random
 import Process
+import Random
 import Task
 import Theme
-import UUID
-import Dict exposing (Dict)
+import UUID exposing (UUID)
+
 
 type Effect
     = EffectNone
@@ -43,9 +44,25 @@ type alias Flags =
     , seeds : UUID.Seeds
     }
 
+
 type DesktopElement
-    = File
-    | Folder
+    = File FileData
+    | Folder FolderData
+
+
+type alias FileData =
+    { name : String
+    , id : UUID
+    , position : ( Int, Int )
+    }
+
+
+type alias FolderData =
+    { name : String
+    , id : UUID
+    , position : ( Int, Int )
+    }
+
 
 fallbackFlags : Flags
 fallbackFlags =
@@ -135,8 +152,8 @@ view model =
         , E.preventDefaultOn "contextmenu" (D.map (\e -> ( ContextMenuClicked e, True )) decodeClickPosition)
         , E.onClick DesktopClicked
         ]
-        [ bottomMenuBar model
-        , case model.contextMenuPosition of
+        ([ bottomMenuBar model
+         , case model.contextMenuPosition of
             Just menuPosition ->
                 H.div
                     [ A.css
@@ -154,7 +171,21 @@ view model =
 
             Nothing ->
                 H.text ""
-        ]
+         ]
+            ++ List.map
+                desktopElementView
+                (Dict.values model.elements)
+        )
+
+
+desktopElementView : DesktopElement -> H.Html Msg
+desktopElementView element =
+    case element of
+        Folder folderData ->
+            folderIconView folderData
+
+        File fileData ->
+            fileIconView fileData
 
 
 bottomMenuBar : Model -> H.Html Msg
@@ -195,18 +226,47 @@ init flagsJS =
 update_ : Msg -> Model -> ComponentResult ( Model, Effect ) Msg Never Never
 update_ msg model =
     case msg of
-        RequestCreateFile clickPosition ->
+        RequestCreateFolder clickPosition ->
             let
-                (uuid, nextModel) = getUUID model
+                ( uuid, nextModel ) =
+                    getUUID model
 
-                nextElements = Dict.insert (UUID.toString uuid) Folder
-            in  
-            nextModel
+                newFolder =
+                    Folder
+                        { id = uuid
+                        , name = ""
+                        , position = ( clickPosition.clientX, clickPosition.clientY )
+                        }
+
+                nextElements =
+                    Dict.insert (UUID.toString uuid) newFolder model.elements
+            in
+            { nextModel
+                | elements = nextElements
+                , contextMenuPosition = Nothing
+            }
                 |> withModel
                 |> withEffect EffectNone
 
-        RequestCreateFolder clickPosition ->
-            model
+        RequestCreateFile clickPosition ->
+            let
+                ( uuid, nextModel ) =
+                    getUUID model
+
+                newFile =
+                    File
+                        { id = uuid
+                        , name = ""
+                        , position = ( clickPosition.clientX, clickPosition.clientY )
+                        }
+
+                nextElements =
+                    Dict.insert (UUID.toString uuid) newFile model.elements
+            in
+            { nextModel
+                | elements = nextElements
+                , contextMenuPosition = Nothing
+            }
                 |> withModel
                 |> withEffect EffectNone
 
@@ -285,6 +345,7 @@ desktopContextMenuItemView ( itemName, onClick ) =
             , minWidth (px 0)
             , padding2 (px 2) (px 4)
             , cursor pointer
+            , color Theme.black
             , Css.pseudoClass "not(:disabled):active"
                 [ border (px 0)
                 , padding2 (px 2) (px 4)
@@ -301,3 +362,41 @@ desktopContextMenuItemView ( itemName, onClick ) =
         ]
         [ H.text itemName
         ]
+
+
+fileIconView : FileData -> H.Html Msg
+fileIconView fileData =
+    let
+        ( xPos, yPos ) =
+            fileData.position
+    in
+    H.div
+        [ A.css
+            [ backgroundColor Theme.white
+            , width (px 80)
+            , height (px 80)
+            , position absolute
+            , top (px <| toFloat yPos)
+            , left (px <| toFloat xPos)
+            ]
+        ]
+        []
+
+
+folderIconView : FolderData -> H.Html Msg
+folderIconView folderData =
+    let
+        ( xPos, yPos ) =
+            folderData.position
+    in
+    H.div
+        [ A.css
+            [ backgroundColor Theme.manilla
+            , width (px 80)
+            , height (px 80)
+            , position absolute
+            , top (px <| toFloat yPos)
+            , left (px <| toFloat xPos)
+            ]
+        ]
+        []

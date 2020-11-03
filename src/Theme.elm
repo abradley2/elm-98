@@ -3,6 +3,30 @@ module Theme exposing (..)
 import Css exposing (..)
 
 
+white_ =
+    "#ffffff"
+
+
+white =
+    hex white_
+
+
+manilla_ =
+    "#f1d592"
+
+
+manilla =
+    hex manilla_
+
+
+black_ =
+    "#000000"
+
+
+black =
+    hex black_
+
+
 silver_ =
     "#c0c0c0"
 
