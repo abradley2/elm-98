@@ -19,5 +19,8 @@
     "eslint-plugin-promise": "^4.2.1",
     "node-elm-compiler": "^5.0.5",
     "parcel": "^1.12.4"
+  },
+  "dependencies": {
+    "level": "^6.0.1"
   }
 }

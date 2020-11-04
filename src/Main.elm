@@ -1,7 +1,7 @@
 module Main exposing (..)
 
 import Browser
-import Browser.Dom exposing (Viewport, getViewport)
+import Browser.Dom exposing (Element, Viewport, getViewport)
 import Browser.Events exposing (onResize)
 import ComponentResult exposing (ComponentResult, resolve, withCmd, withExternalMsg, withModel)
 import ComponentResult.Effect exposing (resolveAll, resolveEffects, withEffect)
@@ -45,15 +45,16 @@ type alias Flags =
     }
 
 
-type DesktopElement
-    = File FileData
-    | Folder FolderData
+type DesktopElementData
+    = Folder
+    | File
 
 
-type alias FileData =
+type alias DesktopElement =
     { name : String
     , id : UUID
     , position : ( Int, Int )
+    , dataType : DesktopElementData
     }
 
 
@@ -107,6 +108,7 @@ type Msg
     | ContextMenuClicked ClickPosition
     | RequestCreateFile ClickPosition
     | RequestCreateFolder ClickPosition
+    | ElementDragEnded DesktopElement ClickPosition
 
 
 type alias ClickPosition =
@@ -147,6 +149,7 @@ view model =
             , width (vw 100)
             , backgroundColor (hex "#008080")
             , position relative
+            , overflow hidden
             ]
         , A.attribute "data-test" "desktop-background"
         , E.preventDefaultOn "contextmenu" (D.map (\e -> ( ContextMenuClicked e, True )) decodeClickPosition)
@@ -180,12 +183,12 @@ view model =
 
 desktopElementView : DesktopElement -> H.Html Msg
 desktopElementView element =
-    case element of
-        Folder folderData ->
-            folderIconView folderData
+    case element.dataType of
+        Folder ->
+            folderIconView element
 
-        File fileData ->
-            fileIconView fileData
+        File ->
+            fileIconView element
 
 
 bottomMenuBar : Model -> H.Html Msg
@@ -226,17 +229,34 @@ init flagsJS =
 update_ : Msg -> Model -> ComponentResult ( Model, Effect ) Msg Never Never
 update_ msg model =
     case msg of
+        ElementDragEnded element clickPosition ->
+            let
+                nextElement =
+                    { element
+                        | position = ( clickPosition.clientX, clickPosition.clientY )
+                    }
+
+                nextElements =
+                    Dict.insert
+                        (UUID.toString element.id)
+                        nextElement
+                        model.elements
+            in
+            { model | elements = nextElements }
+                |> withModel
+                |> withEffect EffectNone
+
         RequestCreateFolder clickPosition ->
             let
                 ( uuid, nextModel ) =
                     getUUID model
 
                 newFolder =
-                    Folder
-                        { id = uuid
-                        , name = ""
-                        , position = ( clickPosition.clientX, clickPosition.clientY )
-                        }
+                    { id = uuid
+                    , name = ""
+                    , position = ( clickPosition.clientX, clickPosition.clientY )
+                    , dataType = Folder
+                    }
 
                 nextElements =
                     Dict.insert (UUID.toString uuid) newFolder model.elements
@@ -254,11 +274,11 @@ update_ msg model =
                     getUUID model
 
                 newFile =
-                    File
-                        { id = uuid
-                        , name = ""
-                        , position = ( clickPosition.clientX, clickPosition.clientY )
-                        }
+                    { id = uuid
+                    , name = ""
+                    , position = ( clickPosition.clientX, clickPosition.clientY )
+                    , dataType = File
+                    }
 
                 nextElements =
                     Dict.insert (UUID.toString uuid) newFile model.elements
@@ -364,11 +384,11 @@ desktopContextMenuItemView ( itemName, onClick ) =
         ]
 
 
-fileIconView : FileData -> H.Html Msg
-fileIconView fileData =
+fileIconView : DesktopElement -> H.Html Msg
+fileIconView element =
     let
         ( xPos, yPos ) =
-            fileData.position
+            element.position
     in
     H.div
         [ A.css
@@ -379,15 +399,23 @@ fileIconView fileData =
             , top (px <| toFloat yPos)
             , left (px <| toFloat xPos)
             ]
+        , E.on "drag" <|
+            D.map
+                (ElementDragEnded element)
+                decodeClickPosition
+        , E.on "dragend" <|
+            D.map
+                (ElementDragEnded element)
+                decodeClickPosition
         ]
         []
 
 
-folderIconView : FolderData -> H.Html Msg
-folderIconView folderData =
+folderIconView : DesktopElement -> H.Html Msg
+folderIconView element =
     let
         ( xPos, yPos ) =
-            folderData.position
+            element.position
     in
     H.div
         [ A.css
@@ -398,5 +426,14 @@ folderIconView folderData =
             , top (px <| toFloat yPos)
             , left (px <| toFloat xPos)
             ]
+        , A.draggable "true"
+        , E.on "drag" <|
+            D.map
+                (ElementDragEnded element)
+                decodeClickPosition
+        , E.on "dragend" <|
+            D.map
+                (ElementDragEnded element)
+                decodeClickPosition
         ]
         []

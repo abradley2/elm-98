@@ -3,3 +3,4 @@ cache/
 .cache/
 elm-stuff/
 dist/
+.env

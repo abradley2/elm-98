@@ -1,4 +1,5 @@
 import { Elm } from './Main.elm'
+import level from 'level'
 
 const node = document.getElementById('app')
 
