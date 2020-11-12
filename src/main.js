@@ -1,5 +1,4 @@
 import { Elm } from './Main.elm'
-import level from 'level'
 
 const node = document.getElementById('app')
 
@@ -18,4 +17,10 @@ Elm.Main.init({
     seeds
   },
   node
+})
+
+document.addEventListener('dragstart', (e) => {
+  const img = new Image()
+  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
+  e.dataTransfer.setDragImage(img, 0, 0)
 })
