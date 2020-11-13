@@ -37,7 +37,7 @@ runEffect effect =
 
         GetElement clickPosition id ->
             getElement id
-                |> Task.attempt (DraggedElementNode clickPosition)
+                |> Task.attempt (QueriedElementNode clickPosition)
 
         Batch effectList ->
             List.map runEffect effectList
@@ -53,6 +53,7 @@ type alias Flags =
 type DesktopElementData
     = Folder
     | File
+    | Window
 
 
 type alias DesktopElement =
@@ -116,7 +117,8 @@ type Msg
     | RequestCreateFolder ClickPosition
     | ElementDragStarted DesktopElement ClickPosition
     | ElementDragEnded DesktopElement ClickPosition
-    | DraggedElementNode ClickPosition (Result Dom.Error Element)
+    | QueriedElementNode ClickPosition (Result Dom.Error Element)
+    | FolderDoubleClicked DesktopElement
 
 
 type alias ClickPosition =
@@ -198,6 +200,37 @@ desktopElementView element =
         File ->
             fileIconView element
 
+        Window ->
+            windowView element
+
+
+windowView : DesktopElement -> H.Html Msg
+windowView element =
+    let
+        ( xPos, yPos ) =
+            element.position
+    in
+    H.div
+        [ A.css
+            [ position absolute
+            , top (px <| toFloat yPos)
+            , left (px <| toFloat xPos)
+            ]
+        , A.class "title-bar"
+        ]
+        [ H.div
+            [ A.css
+                [ position relative 
+                ]
+            ]
+            []
+        , H.div
+            [ A.class "title-bar-text"
+            ]
+            [ H.text "File Explorer"
+            ]
+        ]
+
 
 bottomMenuBar : Model -> H.Html Msg
 bottomMenuBar model =
@@ -238,7 +271,35 @@ init flagsJS =
 update_ : Msg -> Model -> ComponentResult ( Model, Effect ) Msg Never Never
 update_ msg model =
     case msg of
-        DraggedElementNode offsetClick result ->
+        FolderDoubleClicked element ->
+            let
+                windowWidth =
+                    400
+
+                xPos =
+                    model.viewport
+                        |> Maybe.map .viewport
+                        |> Maybe.map .width
+                        |> Maybe.map (\v -> (v / 2) - (windowWidth / 2))
+                        |> Maybe.withDefault 0
+
+                ( nextId, nextModel ) =
+                    getUUID model
+
+                newElements =
+                    nextModel.elements
+                        |> Dict.insert (UUID.toString nextId)
+                            { id = nextId
+                            , dataType = Window
+                            , name = ""
+                            , position = ( Basics.round xPos, Basics.round 100 )
+                            }
+            in
+            { nextModel | elements = newElements }
+                |> withModel
+                |> withEffect EffectNone
+
+        QueriedElementNode offsetClick result ->
             let
                 clickPosition =
                     result
@@ -346,8 +407,8 @@ update_ msg model =
                 |> withModel
                 |> withEffect EffectNone
 
-        ContextMenuClicked position ->
-            { model | contextMenuPosition = Just position }
+        ContextMenuClicked pos ->
+            { model | contextMenuPosition = Just pos }
                 |> withModel
                 |> withEffect EffectNone
 
@@ -469,6 +530,8 @@ folderIconView element =
             ]
         , A.id (UUID.toString element.id)
         , A.draggable "true"
+        , E.stopPropagationOn "contextmenu" (D.succeed ( NoOp, True ))
+        , E.onDoubleClick (FolderDoubleClicked element)
         , E.on "dragstart" <|
             D.map
                 (ElementDragStarted element)

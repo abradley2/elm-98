@@ -1,7 +1,5 @@
 import { Elm } from './Main.elm'
 
-const node = document.getElementById('app')
-
 const cryptArray = new Uint32Array(4)
 const vals = window.crypto.getRandomValues(cryptArray)
 
@@ -16,7 +14,7 @@ Elm.Main.init({
   flags: {
     seeds
   },
-  node
+  node: document.getElementById('app')
 })
 
 document.addEventListener('dragstart', (e) => {
