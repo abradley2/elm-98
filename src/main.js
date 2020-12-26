@@ -17,8 +17,10 @@ Elm.Main.init({
   node: document.getElementById('app')
 })
 
-document.addEventListener('dragstart', (e) => {
-  const img = new Image()
-  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
-  e.dataTransfer.setDragImage(img, 0, 0)
+document.addEventListener('dragstart', (e) => setTimeout(() => {
+  e.target.style.opacity = '0'
+}, 0))
+
+document.addEventListener('dragend', (e) => {
+  e.target.style.opacity = '1'
 })

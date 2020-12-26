@@ -21,7 +21,6 @@ import UUID exposing (UUID)
 
 type Effect
     = EffectNone
-    | GetElement ClickPosition String
     | QueryViewport
     | Batch (List Effect)
 
@@ -34,10 +33,6 @@ runEffect effect =
 
         EffectNone ->
             Cmd.none
-
-        GetElement clickPosition id ->
-            getElement id
-                |> Task.attempt (QueriedElementNode clickPosition)
 
         Batch effectList ->
             List.map runEffect effectList
@@ -117,22 +112,25 @@ type Msg
     | RequestCreateFolder ClickPosition
     | ElementDragStarted DesktopElement ClickPosition
     | ElementDragEnded DesktopElement ClickPosition
-    | QueriedElementNode ClickPosition (Result Dom.Error Element)
     | FolderDoubleClicked DesktopElement
 
 
 type alias ClickPosition =
     { clientX : Int
     , clientY : Int
+    , offsetX : Int
+    , offsetY : Int
     }
 
 
 decodeClickPosition : D.Decoder ClickPosition
 decodeClickPosition =
-    D.map2
+    D.map4
         ClickPosition
         (D.at [ "clientX" ] D.int)
         (D.at [ "clientY" ] D.int)
+        (D.at [ "offsetX" ] D.int)
+        (D.at [ "offsetY" ] D.int)
 
 
 flagsDecoder : D.Decoder Flags
@@ -220,7 +218,7 @@ windowView element =
         ]
         [ H.div
             [ A.css
-                [ position relative 
+                [ position relative
                 ]
             ]
             []
@@ -299,27 +297,10 @@ update_ msg model =
                 |> withModel
                 |> withEffect EffectNone
 
-        QueriedElementNode offsetClick result ->
-            let
-                clickPosition =
-                    result
-                        |> Result.map (\v -> v.element)
-                        |> Result.map
-                            (\e ->
-                                ClickPosition
-                                    (offsetClick.clientX - Basics.round e.x)
-                                    (offsetClick.clientY - Basics.round e.y)
-                            )
-                        |> Result.toMaybe
-            in
-            { model | dragOffset = clickPosition }
-                |> withModel
-                |> withEffect EffectNone
-
         ElementDragStarted element clickPosition ->
-            model
-                |> withModel
-                |> withEffect (GetElement clickPosition <| UUID.toString element.id)
+            { model | dragOffset = Just clickPosition }
+                |> withModel 
+                |> withEffect EffectNone
 
         ElementDragEnded element clickPosition ->
             let
@@ -327,8 +308,8 @@ update_ msg model =
                     model.dragOffset
                         |> Maybe.map
                             (\offsetPos ->
-                                ( clickPosition.clientX - offsetPos.clientX
-                                , clickPosition.clientY - offsetPos.clientY
+                                ( clickPosition.clientX - offsetPos.offsetX
+                                , clickPosition.clientY - offsetPos.offsetY
                                 )
                             )
                         |> Maybe.withDefault ( clickPosition.clientX, clickPosition.clientY )
@@ -535,10 +516,6 @@ folderIconView element =
         , E.on "dragstart" <|
             D.map
                 (ElementDragStarted element)
-                decodeClickPosition
-        , E.on "drag" <|
-            D.map
-                (ElementDragEnded element)
                 decodeClickPosition
         , E.on "dragend" <|
             D.map
