@@ -15,9 +15,9 @@ import ComponentResult
 
 
 withEffect :
-    effect -- effect to add to result
-    -> ComponentResult model msg extMsg err -- current result
-    -> ComponentResult ( model, effect ) msg extMsg err -- result with effect
+    effect
+    -> ComponentResult model msg extMsg err
+    -> ComponentResult ( model, effect ) msg extMsg err
 withEffect eff =
     mapModel (\m -> ( m, eff ))
 
@@ -30,9 +30,9 @@ resolveAll preformEffect =
     resolveEffects preformEffect >> resolve
 
 resolveEffects :
-    (effect -> Cmd msg) -- performEffect
-    -> ComponentResult ( model, effect ) msg extMsg error -- result with effect
-    -> ComponentResult model msg extMsg error -- normalized result
+    (effect -> Cmd msg)
+    -> ComponentResult ( model, effect ) msg extMsg error
+    -> ComponentResult model msg extMsg error
 resolveEffects performEffect effectfulResult =
     effectfulResult
         |> escape
