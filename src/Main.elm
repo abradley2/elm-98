@@ -3,7 +3,7 @@ module Main exposing (..)
 import Browser
 import Browser.Dom as Dom exposing (Element, Error, Viewport, getElement, getViewport)
 import Browser.Events exposing (onResize)
-import ComponentResult exposing (ComponentResult, resolve, withCmd, withExternalMsg, withModel)
+import ComponentResult exposing (ComponentResult, mapModel, resolve, withCmd, withExternalMsg, withModel)
 import ComponentResult.Effect exposing (resolveAll, resolveEffects, withEffect)
 import Css exposing (..)
 import Dict exposing (Dict)
@@ -249,16 +249,15 @@ bottomMenuBar model =
 
 init_ : D.Value -> ComponentResult ( Model, Effect ) Msg Never Never
 init_ flagsJS =
-    { viewport = Nothing
-    , contextMenuPosition = Nothing
-    , elements = Dict.empty
-    , flags =
-        D.decodeValue flagsDecoder flagsJS
-            |> Result.withDefault fallbackFlags
-    , dragOffset = Nothing
-    }
-        |> withModel
-        |> withEffect EffectNone
+    update_ (OnResize 0 0)
+        { viewport = Nothing
+        , contextMenuPosition = Nothing
+        , elements = Dict.empty
+        , flags =
+            D.decodeValue flagsDecoder flagsJS
+                |> Result.withDefault fallbackFlags
+        , dragOffset = Nothing
+        }
 
 
 init : D.Value -> ( Model, Cmd Msg )
@@ -299,7 +298,7 @@ update_ msg model =
 
         ElementDragStarted element clickPosition ->
             { model | dragOffset = Just clickPosition }
-                |> withModel 
+                |> withModel
                 |> withEffect EffectNone
 
         ElementDragEnded element clickPosition ->
