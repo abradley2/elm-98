@@ -163,8 +163,9 @@ view model =
         , E.preventDefaultOn "contextmenu" (D.map (\e -> ( ContextMenuClicked e, True )) decodeClickPosition)
         , E.onClick DesktopClicked
         ]
-        ([ bottomMenuBar model
-         , case model.contextMenuPosition of
+    <|
+        [ bottomMenuBar model
+        , case model.contextMenuPosition of
             Just menuPosition ->
                 H.div
                     [ A.css
@@ -182,11 +183,10 @@ view model =
 
             Nothing ->
                 H.text ""
-         ]
+        ]
             ++ List.map
                 desktopElementView
                 (Dict.values model.elements)
-        )
 
 
 desktopElementView : DesktopElement -> H.Html Msg
