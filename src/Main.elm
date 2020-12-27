@@ -40,8 +40,7 @@ runEffect effect =
 
 
 type alias Flags =
-    { decoded : Bool
-    , seeds : UUID.Seeds
+    { seeds : UUID.Seeds
     }
 
 
@@ -68,8 +67,7 @@ type alias FolderData =
 
 fallbackFlags : Flags
 fallbackFlags =
-    { decoded = False
-    , seeds =
+    { seeds =
         UUID.Seeds
             (Random.initialSeed 0)
             (Random.initialSeed 0)
@@ -79,7 +77,8 @@ fallbackFlags =
 
 
 type alias Model =
-    { viewport : Maybe Viewport
+    { initialized : Result D.Error ()
+    , viewport : Maybe Viewport
     , contextMenuPosition : Maybe ClickPosition
     , flags : Flags
     , elements : Dict String DesktopElement
@@ -135,22 +134,35 @@ decodeClickPosition =
 
 flagsDecoder : D.Decoder Flags
 flagsDecoder =
-    D.map2 Flags
-        (D.succeed True)
-        (D.at [ "seeds" ] seedDecoder)
+    D.map Flags (D.at [ "seeds" ] seedDecoder)
 
 
 seedDecoder : D.Decoder UUID.Seeds
 seedDecoder =
     D.map4 UUID.Seeds
-        (D.at [ "seed1" ] D.int |> D.map Random.initialSeed)
-        (D.at [ "seed2" ] D.int |> D.map Random.initialSeed)
-        (D.at [ "seed3" ] D.int |> D.map Random.initialSeed)
-        (D.at [ "seed4" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "0" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "1" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "2" ] D.int |> D.map Random.initialSeed)
+        (D.at [ "3" ] D.int |> D.map Random.initialSeed)
 
 
 view : Model -> H.Html Msg
 view model =
+    case model.initialized of
+        Ok _ ->
+            view_ model
+
+        Err err ->
+            H.pre
+                [ A.css
+                    [ color Theme.black
+                    ]
+                ]
+                [ H.text <| D.errorToString err ]
+
+
+view_ : Model -> H.Html Msg
+view_ model =
     H.div
         [ A.css
             [ height (vh 100)
@@ -249,14 +261,17 @@ bottomMenuBar model =
 
 init_ : D.Value -> ComponentResult ( Model, Effect ) Msg Never Never
 init_ flagsJS =
+    let
+        decodeResult =
+            D.decodeValue flagsDecoder flagsJS
+    in
     update_ (OnResize 0 0)
         { viewport = Nothing
         , contextMenuPosition = Nothing
         , elements = Dict.empty
-        , flags =
-            D.decodeValue flagsDecoder flagsJS
-                |> Result.withDefault fallbackFlags
+        , flags = decodeResult |> Result.withDefault fallbackFlags
         , dragOffset = Nothing
+        , initialized = decodeResult |> Result.map (always ())
         }
 
 
