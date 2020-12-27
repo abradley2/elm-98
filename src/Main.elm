@@ -221,13 +221,15 @@ windowView element =
             element.position
     in
     H.div
-        [ A.css
-            [ position absolute
-            , top (px <| toFloat yPos)
-            , left (px <| toFloat xPos)
+        (draggableAttributes element
+            [ A.css
+                [ position absolute
+                , top (px <| toFloat yPos)
+                , left (px <| toFloat xPos)
+                ]
+            , A.class "title-bar"
             ]
-        , A.class "title-bar"
-        ]
+        )
         [ H.div
             [ A.css
                 [ position relative
@@ -481,6 +483,21 @@ desktopContextMenuItemView ( itemName, onClick ) =
         ]
 
 
+draggableAttributes : DesktopElement -> List (H.Attribute Msg) -> List (H.Attribute Msg)
+draggableAttributes element =
+    (++)
+        [ A.draggable "true"
+        , E.on "dragstart" <|
+            D.map
+                (ElementDragStarted element)
+                decodeClickPosition
+        , E.on "dragend" <|
+            D.map
+                (ElementDragEnded element)
+                decodeClickPosition
+        ]
+
+
 fileIconView : DesktopElement -> H.Html Msg
 fileIconView element =
     let
@@ -488,23 +505,17 @@ fileIconView element =
             element.position
     in
     H.div
-        [ A.css
-            [ backgroundColor Theme.white
-            , width (px 80)
-            , height (px 80)
-            , position absolute
-            , top (px <| toFloat yPos)
-            , left (px <| toFloat xPos)
+        (draggableAttributes element
+            [ A.css
+                [ backgroundColor Theme.white
+                , width (px 80)
+                , height (px 80)
+                , position absolute
+                , top (px <| toFloat yPos)
+                , left (px <| toFloat xPos)
+                ]
             ]
-        , E.on "drag" <|
-            D.map
-                (ElementDragEnded element)
-                decodeClickPosition
-        , E.on "dragend" <|
-            D.map
-                (ElementDragEnded element)
-                decodeClickPosition
-        ]
+        )
         []
 
 
@@ -515,25 +526,18 @@ folderIconView element =
             element.position
     in
     H.div
-        [ A.css
-            [ backgroundColor Theme.manilla
-            , width (px 80)
-            , height (px 80)
-            , position absolute
-            , top (px <| toFloat yPos)
-            , left (px <| toFloat xPos)
+        (draggableAttributes element
+            [ A.css
+                [ backgroundColor Theme.manilla
+                , width (px 80)
+                , height (px 80)
+                , position absolute
+                , top (px <| toFloat yPos)
+                , left (px <| toFloat xPos)
+                ]
+            , A.id (UUID.toString element.id)
+            , E.stopPropagationOn "contextmenu" (D.succeed ( NoOp, True ))
+            , E.onDoubleClick (FolderDoubleClicked element)
             ]
-        , A.id (UUID.toString element.id)
-        , A.draggable "true"
-        , E.stopPropagationOn "contextmenu" (D.succeed ( NoOp, True ))
-        , E.onDoubleClick (FolderDoubleClicked element)
-        , E.on "dragstart" <|
-            D.map
-                (ElementDragStarted element)
-                decodeClickPosition
-        , E.on "dragend" <|
-            D.map
-                (ElementDragEnded element)
-                decodeClickPosition
-        ]
+        )
         []
