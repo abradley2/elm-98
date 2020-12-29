@@ -47,7 +47,7 @@ type alias Flags =
 type DesktopElementData
     = Folder
     | File
-    | Window
+    | Window ( Int, Int )
 
 
 type alias DesktopElement =
@@ -210,37 +210,58 @@ desktopElementView element =
         File ->
             fileIconView element
 
-        Window ->
-            windowView element
+        Window widthHeight ->
+            windowView element widthHeight
 
 
-windowView : DesktopElement -> H.Html Msg
-windowView element =
+windowView : DesktopElement -> ( Int, Int ) -> H.Html Msg
+windowView element ( windowWidth, windowHeight ) =
     let
         ( xPos, yPos ) =
             element.position
     in
     H.div
         (draggableAttributes element
-            [ A.css
+            [ A.class "window"
+            , A.css
                 [ position absolute
                 , top (px <| toFloat yPos)
                 , left (px <| toFloat xPos)
+                , Theme.zIndexWindow
                 ]
-            , A.class "title-bar"
             ]
         )
         [ H.div
             [ A.css
-                [ position relative
+                []
+            , A.class "title-bar"
+            ]
+            [ H.div
+                [ A.class "title-bar-text"
+                ]
+                [ H.text "File Explorer"
+                ]
+            , H.div 
+                [ A.class "title-bar-controls"]
+                [ H.button 
+                    [ A.attribute "aria-label" "Minimize"] 
+                    []
+                , H.button 
+                    [ A.attribute "aria-label" "Maximize"] 
+                    []
+                , H.button 
+                    [ A.attribute "aria-label" "Close"] 
+                    []
+                ]
+            ]
+        , H.div
+            [ A.class "window-body"
+            , A.css
+                [ height (px <| toFloat windowHeight)
+                , width (px <| toFloat windowWidth)
                 ]
             ]
             []
-        , H.div
-            [ A.class "title-bar-text"
-            ]
-            [ H.text "File Explorer"
-            ]
         ]
 
 
@@ -292,8 +313,7 @@ update_ msg model =
 
                 xPos =
                     model.viewport
-                        |> Maybe.map .viewport
-                        |> Maybe.map .width
+                        |> Maybe.map (.viewport >> .width)
                         |> Maybe.map (\v -> (v / 2) - (windowWidth / 2))
                         |> Maybe.withDefault 0
 
@@ -304,7 +324,7 @@ update_ msg model =
                     nextModel.elements
                         |> Dict.insert (UUID.toString nextId)
                             { id = nextId
-                            , dataType = Window
+                            , dataType = Window ( windowWidth, 250 )
                             , name = ""
                             , position = ( Basics.round xPos, Basics.round 100 )
                             }

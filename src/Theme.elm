@@ -3,6 +3,11 @@ module Theme exposing (..)
 import Css exposing (..)
 
 
+zIndexWindow : Style
+zIndexWindow =
+    zIndex <| int 2
+
+
 white_ : String
 white_ =
     "#ffffff"
