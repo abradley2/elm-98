@@ -3,14 +3,16 @@ module Main exposing (..)
 import Browser
 import Browser.Dom as Dom exposing (Element, Error, Viewport, getElement, getViewport)
 import Browser.Events exposing (onResize)
-import ComponentResult exposing (ComponentResult, mapModel, resolve, withCmd, withExternalMsg, withModel)
+import ComponentResult exposing (ComponentResult, applyExternalMsg, mapModel, mapMsg, resolve, withCmd, withExternalMsg, withModel)
 import ComponentResult.Effect exposing (resolveAll, resolveEffects, withEffect)
 import Css exposing (..)
+import DesktopElement exposing (DesktopElement, DesktopElementData(..))
 import Dict exposing (Dict)
 import Html
 import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as E
+import Json
 import Json.Decode as D
 import Process
 import Random
@@ -20,48 +22,27 @@ import UUID exposing (UUID)
 
 
 type Effect
-    = EffectNone
-    | QueryViewport
-    | Batch (List Effect)
+    = EffCmd (Cmd Msg)
+    | EffQueryViewport
+    | EffBatch (List Effect)
 
 
 runEffect : Effect -> Cmd Msg
 runEffect effect =
     case effect of
-        QueryViewport ->
+        EffQueryViewport ->
             Task.perform RecievedViewport getViewport
 
-        EffectNone ->
-            Cmd.none
+        EffCmd cmd ->
+            cmd
 
-        Batch effectList ->
+        EffBatch effectList ->
             List.map runEffect effectList
                 |> Cmd.batch
 
 
 type alias Flags =
     { seeds : UUID.Seeds
-    }
-
-
-type DesktopElementData
-    = Folder
-    | File
-    | Window ( Int, Int )
-
-
-type alias DesktopElement =
-    { name : String
-    , id : UUID
-    , position : ( Int, Int )
-    , dataType : DesktopElementData
-    }
-
-
-type alias FolderData =
-    { name : String
-    , id : UUID
-    , position : ( Int, Int )
     }
 
 
@@ -79,10 +60,9 @@ fallbackFlags =
 type alias Model =
     { initialized : Result D.Error ()
     , viewport : Maybe Viewport
-    , contextMenuPosition : Maybe ClickPosition
+    , contextMenuPosition : Maybe Json.ClickPosition
     , flags : Flags
     , elements : Dict String DesktopElement
-    , dragOffset : Maybe ClickPosition
     }
 
 
@@ -106,30 +86,10 @@ type Msg
     | OnResize Int Int
     | RecievedViewport Viewport
     | DesktopClicked
-    | ContextMenuClicked ClickPosition
-    | RequestCreateFile ClickPosition
-    | RequestCreateFolder ClickPosition
-    | ElementDragStarted DesktopElement ClickPosition
-    | ElementDragEnded DesktopElement ClickPosition
-    | FolderDoubleClicked DesktopElement
-
-
-type alias ClickPosition =
-    { clientX : Int
-    , clientY : Int
-    , offsetX : Int
-    , offsetY : Int
-    }
-
-
-decodeClickPosition : D.Decoder ClickPosition
-decodeClickPosition =
-    D.map4
-        ClickPosition
-        (D.at [ "clientX" ] D.int)
-        (D.at [ "clientY" ] D.int)
-        (D.at [ "offsetX" ] D.int)
-        (D.at [ "offsetY" ] D.int)
+    | ContextMenuClicked Json.ClickPosition
+    | RequestCreateFile Json.ClickPosition
+    | RequestCreateFolder Json.ClickPosition
+    | DesktopElementMsg UUID DesktopElement.Msg
 
 
 flagsDecoder : D.Decoder Flags
@@ -172,7 +132,7 @@ view_ model =
             , overflow hidden
             ]
         , A.attribute "data-test" "desktop-background"
-        , E.preventDefaultOn "contextmenu" (D.map (\e -> ( ContextMenuClicked e, True )) decodeClickPosition)
+        , E.preventDefaultOn "contextmenu" (D.map (\e -> ( ContextMenuClicked e, True )) Json.decodeClickPosition)
         , E.onClick DesktopClicked
         ]
     <|
@@ -197,72 +157,10 @@ view_ model =
                 H.text ""
         ]
             ++ List.map
-                desktopElementView
+                (\element ->
+                    DesktopElement.view (DesktopElementMsg element.id) element
+                )
                 (Dict.values model.elements)
-
-
-desktopElementView : DesktopElement -> H.Html Msg
-desktopElementView element =
-    case element.dataType of
-        Folder ->
-            folderIconView element
-
-        File ->
-            fileIconView element
-
-        Window widthHeight ->
-            windowView element widthHeight
-
-
-windowView : DesktopElement -> ( Int, Int ) -> H.Html Msg
-windowView element ( windowWidth, windowHeight ) =
-    let
-        ( xPos, yPos ) =
-            element.position
-    in
-    H.div
-        (draggableAttributes element
-            [ A.class "window"
-            , A.css
-                [ position absolute
-                , top (px <| toFloat yPos)
-                , left (px <| toFloat xPos)
-                , Theme.zIndexWindow
-                ]
-            ]
-        )
-        [ H.div
-            [ A.css
-                []
-            , A.class "title-bar"
-            ]
-            [ H.div
-                [ A.class "title-bar-text"
-                ]
-                [ H.text "File Explorer"
-                ]
-            , H.div 
-                [ A.class "title-bar-controls"]
-                [ H.button 
-                    [ A.attribute "aria-label" "Minimize"] 
-                    []
-                , H.button 
-                    [ A.attribute "aria-label" "Maximize"] 
-                    []
-                , H.button 
-                    [ A.attribute "aria-label" "Close"] 
-                    []
-                ]
-            ]
-        , H.div
-            [ A.class "window-body"
-            , A.css
-                [ height (px <| toFloat windowHeight)
-                , width (px <| toFloat windowWidth)
-                ]
-            ]
-            []
-        ]
 
 
 bottomMenuBar : Model -> H.Html Msg
@@ -293,7 +191,6 @@ init_ flagsJS =
         , contextMenuPosition = Nothing
         , elements = Dict.empty
         , flags = decodeResult |> Result.withDefault fallbackFlags
-        , dragOffset = Nothing
         , initialized = decodeResult |> Result.map (always ())
         }
 
@@ -303,67 +200,57 @@ init flagsJS =
     init_ flagsJS |> resolveAll runEffect
 
 
+desktopElementExtMsg : DesktopElement.ExtMsg -> ComponentResult Model Msg Never Never -> ComponentResult Model Msg Never Never
+desktopElementExtMsg extMsg result =
+    case extMsg of
+        DesktopElement.FolderDoubleClicked element ->
+            result
+                |> mapModel
+                    (\model ->
+                        let
+                            windowWidth =
+                                400
+
+                            xPos =
+                                model.viewport
+                                    |> Maybe.map (.viewport >> .width)
+                                    |> Maybe.map (\v -> (v / 2) - (windowWidth / 2))
+                                    |> Maybe.withDefault 0
+
+                            ( nextId, nextModel ) =
+                                getUUID model
+
+                            newElements =
+                                nextModel.elements
+                                    |> Dict.insert (UUID.toString nextId)
+                                        { id = nextId
+                                        , dataType = Window ( windowWidth, 250 )
+                                        , name = ""
+                                        , position = ( Basics.round xPos, Basics.round 100 )
+                                        , clickPosition = Nothing
+                                        }
+                        in
+                        { nextModel | elements = newElements }
+                    )
+
+
 update_ : Msg -> Model -> ComponentResult ( Model, Effect ) Msg Never Never
 update_ msg model =
     case msg of
-        FolderDoubleClicked element ->
-            let
-                windowWidth =
-                    400
+        DesktopElementMsg uuid desktopElementMsg ->
+            case Dict.get (UUID.toString uuid) model.elements of
+                Just element ->
+                    DesktopElement.update desktopElementMsg element
+                        |> mapModel (\nextElement -> Dict.insert (UUID.toString uuid) nextElement model.elements)
+                        |> mapModel (\elements -> { model | elements = elements })
+                        |> mapMsg (DesktopElementMsg element.id)
+                        |> applyExternalMsg desktopElementExtMsg
+                        |> withEffect (EffCmd Cmd.none)
 
-                xPos =
-                    model.viewport
-                        |> Maybe.map (.viewport >> .width)
-                        |> Maybe.map (\v -> (v / 2) - (windowWidth / 2))
-                        |> Maybe.withDefault 0
-
-                ( nextId, nextModel ) =
-                    getUUID model
-
-                newElements =
-                    nextModel.elements
-                        |> Dict.insert (UUID.toString nextId)
-                            { id = nextId
-                            , dataType = Window ( windowWidth, 250 )
-                            , name = ""
-                            , position = ( Basics.round xPos, Basics.round 100 )
-                            }
-            in
-            { nextModel | elements = newElements }
-                |> withModel
-                |> withEffect EffectNone
-
-        ElementDragStarted element clickPosition ->
-            { model | dragOffset = Just clickPosition }
-                |> withModel
-                |> withEffect EffectNone
-
-        ElementDragEnded element clickPosition ->
-            let
-                ( withOffsetX, withOffsetY ) =
-                    model.dragOffset
-                        |> Maybe.map
-                            (\offsetPos ->
-                                ( clickPosition.clientX - offsetPos.offsetX
-                                , clickPosition.clientY - offsetPos.offsetY
-                                )
-                            )
-                        |> Maybe.withDefault ( clickPosition.clientX, clickPosition.clientY )
-
-                nextElement =
-                    { element
-                        | position = ( withOffsetX, withOffsetY )
-                    }
-
-                nextElements =
-                    Dict.insert
-                        (UUID.toString element.id)
-                        nextElement
-                        model.elements
-            in
-            { model | elements = nextElements }
-                |> withModel
-                |> withEffect EffectNone
+                Nothing ->
+                    model
+                        |> withModel
+                        |> withEffect (EffCmd Cmd.none)
 
         RequestCreateFolder clickPosition ->
             let
@@ -375,6 +262,7 @@ update_ msg model =
                     , name = ""
                     , position = ( clickPosition.clientX, clickPosition.clientY )
                     , dataType = Folder
+                    , clickPosition = Nothing
                     }
 
                 nextElements =
@@ -385,7 +273,7 @@ update_ msg model =
                 , contextMenuPosition = Nothing
             }
                 |> withModel
-                |> withEffect EffectNone
+                |> withEffect (EffCmd Cmd.none)
 
         RequestCreateFile clickPosition ->
             let
@@ -397,6 +285,7 @@ update_ msg model =
                     , name = ""
                     , position = ( clickPosition.clientX, clickPosition.clientY )
                     , dataType = File
+                    , clickPosition = Nothing
                     }
 
                 nextElements =
@@ -407,32 +296,32 @@ update_ msg model =
                 , contextMenuPosition = Nothing
             }
                 |> withModel
-                |> withEffect EffectNone
+                |> withEffect (EffCmd Cmd.none)
 
         NoOp ->
             model
                 |> withModel
-                |> withEffect EffectNone
+                |> withEffect (EffCmd Cmd.none)
 
         OnResize _ _ ->
             model
                 |> withModel
-                |> withEffect QueryViewport
+                |> withEffect EffQueryViewport
 
         DesktopClicked ->
             { model | contextMenuPosition = Nothing }
                 |> withModel
-                |> withEffect EffectNone
+                |> withEffect (EffCmd Cmd.none)
 
         ContextMenuClicked pos ->
             { model | contextMenuPosition = Just pos }
                 |> withModel
-                |> withEffect EffectNone
+                |> withEffect (EffCmd Cmd.none)
 
         RecievedViewport viewport ->
             { model | viewport = Just viewport }
                 |> withModel
-                |> withEffect EffectNone
+                |> withEffect (EffCmd Cmd.none)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -455,7 +344,7 @@ main =
         }
 
 
-desktopContextMenuView : Model -> ClickPosition -> H.Html Msg
+desktopContextMenuView : Model -> Json.ClickPosition -> H.Html Msg
 desktopContextMenuView model clickPosition =
     H.div
         [ A.css
@@ -501,63 +390,3 @@ desktopContextMenuItemView ( itemName, onClick ) =
         ]
         [ H.text itemName
         ]
-
-
-draggableAttributes : DesktopElement -> List (H.Attribute Msg) -> List (H.Attribute Msg)
-draggableAttributes element =
-    (++)
-        [ A.draggable "true"
-        , E.on "dragstart" <|
-            D.map
-                (ElementDragStarted element)
-                decodeClickPosition
-        , E.on "dragend" <|
-            D.map
-                (ElementDragEnded element)
-                decodeClickPosition
-        ]
-
-
-fileIconView : DesktopElement -> H.Html Msg
-fileIconView element =
-    let
-        ( xPos, yPos ) =
-            element.position
-    in
-    H.div
-        (draggableAttributes element
-            [ A.css
-                [ backgroundColor Theme.white
-                , width (px 80)
-                , height (px 80)
-                , position absolute
-                , top (px <| toFloat yPos)
-                , left (px <| toFloat xPos)
-                ]
-            ]
-        )
-        []
-
-
-folderIconView : DesktopElement -> H.Html Msg
-folderIconView element =
-    let
-        ( xPos, yPos ) =
-            element.position
-    in
-    H.div
-        (draggableAttributes element
-            [ A.css
-                [ backgroundColor Theme.manilla
-                , width (px 80)
-                , height (px 80)
-                , position absolute
-                , top (px <| toFloat yPos)
-                , left (px <| toFloat xPos)
-                ]
-            , A.id (UUID.toString element.id)
-            , E.stopPropagationOn "contextmenu" (D.succeed ( NoOp, True ))
-            , E.onDoubleClick (FolderDoubleClicked element)
-            ]
-        )
-        []

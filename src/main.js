@@ -2,8 +2,6 @@ import { Elm } from './Main.elm'
 
 const seeds = window.crypto.getRandomValues(new Uint32Array(4))
 
-console.log(seeds)
-
 Elm.Main.init({
   flags: {
     seeds
